@@ -1,9 +1,9 @@
-port module Main exposing (Model, Msg(..), add1, init, main, toJs, update, view)
+port module Main exposing (Model, Msg(..), init, main, toJs, update, view)
 
 import Browser
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onCheck, onInput)
 import Http exposing (Error(..))
 import Json.Decode as Decode
 
@@ -22,16 +22,17 @@ port toJs : String -> Cmd msg
 -- MODEL
 -- ---------------------------
 
-
-type alias Model =
-    { counter : Int
-    , serverMessage : String
+type alias Todo =
+    { text : String
+    , done : Bool
     }
 
+type alias Model =
+    List Todo
 
 init : Int -> ( Model, Cmd Msg )
 init flags =
-    ( { counter = flags, serverMessage = "" }, Cmd.none )
+    ( [] , Cmd.none )
 
 
 
@@ -41,110 +42,129 @@ init flags =
 
 
 type Msg
-    = Inc
-    | Set Int
-    | TestServer
-    | OnServerResponse (Result Http.Error String)
-
+    = Add
+    | Remove Int
+    | Change Int String
+    | Mark Int Bool
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update message model =
     case message of
-        Inc ->
-            ( add1 model, toJs "Hello Js" )
-
-        Set m ->
-            ( { model | counter = m }, toJs "Hello Js" )
-
-        TestServer ->
-            let
-                expect =
-                    Http.expectJson OnServerResponse (Decode.field "result" Decode.string)
-            in
-            ( model
-            , Http.get { url = "/test", expect = expect }
+        Add ->
+            ( model ++ [ defaultItem ]
+            , Cmd.none
             )
 
-        OnServerResponse res ->
-            case res of
-                Ok r ->
-                    ( { model | serverMessage = r }, Cmd.none )
+        Remove idx ->
+            ( model
+                |> List.indexedMap (\i item -> { i = i, item = item })
+                |> List.filter (\indexedItem -> indexedItem.i /= idx)
+                |> List.map (\indexedItem -> indexedItem.item)
+            , Cmd.none
+            )
 
-                Err err ->
-                    ( { model | serverMessage = "Error: " ++ httpErrorToString err }, Cmd.none )
+        Change idx text ->
+            ( useAt idx (\todo -> { todo | text = text }) model
+            , Cmd.none
+            )
 
+        Mark idx done ->
+            ( useAt idx (\todo -> { todo | done = done }) model
+            , Cmd.none
+            )
 
-httpErrorToString : Http.Error -> String
-httpErrorToString err =
-    case err of
-        BadUrl url ->
-            "BadUrl: " ++ url
+defaultItem : Todo
+defaultItem =
+    Todo "" False
 
-        Timeout ->
-            "Timeout"
+useAt : Int -> (a -> a) -> List a -> List a
+useAt idx fn items =
+    List.indexedMap
+        (\i item ->
+            if i == idx then
+                fn item
 
-        NetworkError ->
-            "NetworkError"
-
-        BadStatus _ ->
-            "BadStatus"
-
-        BadBody s ->
-            "BadBody: " ++ s
-
-
-{-| increments the counter
-
-    add1 5 --> 6
-
--}
-add1 : Model -> Model
-add1 model =
-    { model | counter = model.counter + 1 }
-
-
+            else
+                item
+        )
+        items
 
 -- ---------------------------
 -- VIEW
 -- ---------------------------
 
-
-view : Model -> Html Msg
-view model =
-    div [ class "container" ]
-        [ header []
-            [ -- img [ src "/images/logo.png" ] []
-              span [ class "logo" ] []
-            , h1 [] [ text "Elm 0.19.1 Webpack Starter, with hot-reloading" ]
+viewItem : Int -> Todo -> Html Msg
+viewItem idx todoItem =
+    div
+        [ class "input-group mt-2"
+        ]
+        [ div
+            [ class "input-group-prepend"
             ]
-        , p [] [ text "Click on the button below to increment the state." ]
-        , div [ class "pure-g" ]
-            [ div [ class "pure-u-1-3" ]
-                [ button
-                    [ class "pure-button pure-button-primary"
-                    , onClick Inc
-                    ]
-                    [ text "+ 1" ]
-                , text <| String.fromInt model.counter
+            [ div
+                [ class "input-group-text"
                 ]
-            , div [ class "pure-u-1-3" ] []
-            , div [ class "pure-u-1-3" ]
-                [ button
-                    [ class "pure-button pure-button-primary"
-                    , onClick TestServer
+                [ input
+                    [ type_ "checkbox"
+                    , class ""
+                    , checked todoItem.done
+                    , onCheck (Mark idx)
                     ]
-                    [ text "ping dev server" ]
-                , text model.serverMessage
+                    []
                 ]
             ]
-        , p [] [ text "Then make a change to the source code and see how the state is retained after you recompile." ]
-        , p []
-            [ text "And now don't forget to add a star to the Github repo "
-            , a [ href "https://github.com/simonh1000/elm-webpack-starter" ] [ text "elm-webpack-starter" ]
+        , input
+            [ value todoItem.text
+            , class "form-control"
+            , onInput (Change idx)
+            , placeholder "Todo Item"
+            ]
+            []
+        , div
+            [ class "input-group-append"
+            ]
+            [ button
+                [ onClick (Remove idx)
+                , class "btn btn-danger"
+                ]
+                [ text "Remove"
+                ]
             ]
         ]
 
-
+view : Model -> Html Msg
+view model =
+    div
+        [ class "card col-12 col-md-8 col-xl-6 mx-auto"
+        ]
+        [ div
+            [ class "card-body"
+            ]
+            [ div
+                [ class "container d-flex"
+                ]
+                [ h1
+                    [ class "d-inline"
+                    ]
+                    [ text "Todo"
+                    ]
+                , div
+                    [ class "ml-auto d-flex"
+                    ]
+                    [ button
+                        [ onClick Add
+                        , class "btn btn-primary my-auto"
+                        ]
+                        [ text "+"
+                        ]
+                    ]
+                ]
+            , div
+                [
+                ]
+                (List.indexedMap viewItem model)
+            ]
+        ]
 
 -- ---------------------------
 -- MAIN
@@ -158,7 +178,7 @@ main =
         , update = update
         , view =
             \m ->
-                { title = "Elm 0.19 starter"
+                { title = "Elm Todo List"
                 , body = [ view m ]
                 }
         , subscriptions = \_ -> Sub.none
